@@ -1,0 +1,50 @@
+mostly from https://setkeh.com/posts/nixos-zfs-install-guide/ , changed partition order
+
+sgdisk -o /dev/sda
+
+sgdisk -n1:1M:+512M -t1:EF00 /dev/sda
+
+sgdisk -n2:0:0 -t2:BF01 /dev/sda
+
+mkfs.vfat /dev/sda1
+
+cryptsetup luksFormat --type luks2 /dev/sda2
+
+cryptsetup open --type luks /dev/sda2 crypt
+
+zpool create -O mountpoint=none rpool /dev/mapper/crypt
+
+zfs create -o mountpoint=legacy rpool/root
+zfs create -o mountpoint=legacy rpool/root/nixos
+zfs create -o mountpoint=legacy rpool/home
+
+mount -t zfs rpool/root/nixos /mnt
+mkdir /mnt/{boot,home}
+mount -t zfs rpool/home /mnt/home
+mount /dev/sda1 /mnt/boot
+
+nixos-generate-config --root /mnt
+
+# now add to configuration.nix
+
+boot.supportedFilesystems = [ "zfs" ];
+
+networking.hostId = "deadbeef"; # change some 8 hex digits, zfs needs this
+
+boot.initrd.luks.devices = {
+   root = {
+     device = "/dev/sda2
+     preLVM = true;
+   };
+  };
+  
+# and then create zfs swap volume
+
+zfs create -V 8G -b $(getconf PAGESIZE) -o compression=zle \
+      -o logbias=throughput -o sync=always \
+      -o primarycache=metadata -o secondarycache=none \
+      -o com.sun:auto-snapshot=false rpool/swap
+
+mkswap -f /dev/zvol/rpool/swap
+
+# that is about it!
