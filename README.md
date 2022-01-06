@@ -1,0 +1,1 @@
+# NixOSconfigMacmini2012
